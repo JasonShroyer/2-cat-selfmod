@@ -111,3 +111,16 @@ if __name__ == "__main__":
     test_identity_reparam()
     test_scaling_reparam()
     print("All basic tests passed.")
+
+def test_identity_reparam_torch():
+    X = CatObject("InputSpace", shape=(1,))
+    Y = CatObject("OutputSpace", shape=(1,))
+    param_space = TupleParamSpace((1.0,))
+    
+    morph_source = ParametricMorphism(X, Y, param_space, dummy_layer_identity, name="Source")
+    morph_target = ParametricMorphism(X, Y, param_space, dummy_layer_identity, name="Target")
+    
+    identity_reparam = lambda p: p
+    rho = Reparam2Morphism(morph_source, morph_target, identity_reparam, name="IdentityReparamTorch")
+    
+    assert rho.check_commute(test_samples=5, tol=1e-6, use_torch=True), "Torch-based identity reparameterization failed."
