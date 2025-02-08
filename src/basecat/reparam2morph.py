@@ -1,22 +1,19 @@
 # src/basecat/reparam2morph.py
 
-from typing import Callable, Any
+from typing import Any, Callable
 from basecat.morphisms import ParametricMorphism
 
 class Reparam2Morphism:
     """
-    Represents a 2-morphism (reparameterization) between two parametric morphisms:
-      ρ: (P, f) => (P', f'),
-    implemented by a map r: P' -> P such that for all x and p' in P':
-          f'(p', x) == f(r(p'), x)
+    Represents a 2-morphism (reparameterization) between two parametric morphisms.
     """
     def __init__(self, 
                  source: ParametricMorphism, 
                  target: ParametricMorphism, 
                  reparam_map: Callable[[Any], Any],
                  name: str = None):
-        # Ensure the source and target morphisms share the same domain and codomain.
-        if not source.dom.is_compatible(target.dom) or not source.cod.is_compatible(target.cod):
+        # Ensure that the source and target morphisms have compatible domains and codomains.
+        if source.dom != target.dom or source.cod != target.cod:
             raise ValueError("Source and target morphisms must have compatible domains and codomains.")
         self.source = source
         self.target = target
@@ -24,28 +21,25 @@ class Reparam2Morphism:
         self.name = name if name is not None else "UnnamedReparam"
 
     def apply_on_params(self, p_prime: Any) -> Any:
-        """
-        Apply the reparameterization map r: P' -> P.
-        """
         return self.reparam_map(p_prime)
 
-    def check_commute(self, test_samples: int = 5, tol: float = 1e-6) -> bool:
+    def check_commute(self, test_samples: int = 5, tol: float = 1e-6, use_torch: bool = False) -> bool:
         """
-        Verify the commutativity condition:
-           f'(p', x) == f(r(p'), x)
-        for a number of test samples.
-        
-        This is a simplified placeholder version. In practice, you should
-        use a sampling method appropriate for your domain.
+        Verify that for a batch of test samples, the condition holds:
+             f'(p', x) == f(r(p'), x)
         """
         import numpy as np
 
+        # For simplicity, assume self.source.dom.shape exists.
+        if hasattr(self.source.dom, 'shape') and self.source.dom.shape:
+            batch_shape = (test_samples,) + self.source.dom.shape
+            X = np.random.rand(*batch_shape)
+        else:
+            X = np.random.rand(test_samples)
+
         for i in range(test_samples):
-            # Create dummy samples; replace with domain-specific sampling.
-            # Assume self.source.dom.shape exists; if not, use a scalar.
-            x = np.random.rand(*self.source.dom.shape) if self.source.dom.shape else np.random.rand()
-            # For p_prime, we assume a dummy numeric sample; replace with real sampling.
-            p_prime = np.random.rand(1)  # Placeholder sample.
+            x = X[i]
+            p_prime = np.random.rand(1)  # A simple dummy sample.
             y_target = self.target.forward(p_prime, x)
             p = self.reparam_map(p_prime)
             y_source = self.source.forward(p, x)
