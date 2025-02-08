@@ -42,3 +42,24 @@ if __name__ == "__main__":
     test_forward()
     test_reparameterization()
     print("All basic tests passed.")
+# tests/test_basic.py
+
+import pytest
+from basecat.morphisms import split_params, merge_params
+
+def test_split_merge_params_success():
+    # Create a composite parameter from two sample values.
+    p1 = 3.14
+    p2 = [1, 2, 3]
+    composite = merge_params(p1, p2)
+    # Check that split_params returns the original values.
+    sp1, sp2 = split_params(composite)
+    assert sp1 == p1, "First parameter not recovered correctly."
+    assert sp2 == p2, "Second parameter not recovered correctly."
+
+def test_split_params_failure():
+    # Test that an incorrect parameter format raises a ValueError.
+    with pytest.raises(ValueError):
+        split_params(3.14)  # Not a tuple/list.
+    with pytest.raises(ValueError):
+        split_params((1, 2, 3))  # Tuple length not equal to 2.
