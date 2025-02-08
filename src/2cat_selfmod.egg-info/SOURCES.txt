@@ -1,0 +1,15 @@
+README.md
+setup.py
+src/2cat_selfmod.egg-info/PKG-INFO
+src/2cat_selfmod.egg-info/SOURCES.txt
+src/2cat_selfmod.egg-info/dependency_links.txt
+src/2cat_selfmod.egg-info/requires.txt
+src/2cat_selfmod.egg-info/top_level.txt
+src/basecat/__init__.py
+src/basecat/morphisms.py
+src/basecat/objects.py
+src/basecat/reparam2morph.py
+src/composition/__init__.py
+src/composition/compose_1morph.py
+src/composition/compose_2morph.py
+tests/test_basic.py
