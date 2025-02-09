@@ -7,46 +7,60 @@ from project_mnist import MNISTClassifier  # Adjust if necessary
 
 def reparameterize_fc1(old_layer: nn.Module, scale: float) -> (nn.Module, callable):
     """
-    Given an old fully-connected layer (old_layer) that acts as fc1,
-    create a new layer where the parameters are scaled by 1/scale,
-    and adjust the forward pass so that the overall computation remains unchanged.
-
-    For a linear layer (y = x @ W^T + b), if we set:
-        W_new = W_old / scale   and   b_new = b_old / scale,
-    then the new layer's computation is:
-        y_new = x @ (W_old/scale)^T + (b_old/scale) = (1/scale) * (x @ W_old^T + b_old)
-
-    To compensate, we override the forward pass so that:
-        new_layer(x) = scale * y_new = x @ W_old^T + b_old
-
-    The reparameterization map r is defined as:
-        r(p_new) = scale * p_new,
-    which maps new parameters back to the old scale.
-
+    Reparameterize the fc1 layer by scaling its base parameters.
+    
+    If old_layer already has attributes `base_weight` and `base_bias`, these are used
+    as the original parameters; otherwise, the current weight and bias are stored as the base.
+    
+    The new layer is constructed with:
+      - new_weight = base_weight / scale
+      - new_bias = base_bias / scale
+    And the forward pass is overridden so that:
+      new_layer(x) = scale * (x @ (base_weight/scale)^T + (base_bias/scale))
+                    = x @ base_weight^T + base_bias
+    The reparameterization map is defined as:
+      r(p_new) = scale * p_new
+      
+    This ensures that regardless of the scale applied in this modification,
+    the overall computation remains the same as the original layer.
+    
     Returns:
-        new_layer: a new linear layer with the adjusted forward pass.
-        r: a reparameterization function that maps new parameters to the old scale.
+        new_layer: The new fc1 layer with adjusted forward pass.
+        r: A reparameterization function mapping new parameters to the original scale.
     """
-    # Extract dimensions from the old layer.
+    # If the old layer does not have base parameters, store them.
+    if not hasattr(old_layer, 'base_weight'):
+        old_layer.base_weight = old_layer.weight.clone().detach()
+        old_layer.base_bias = old_layer.bias.clone().detach()
+    
+    # Use the base parameters for further modifications.
+    base_weight = old_layer.base_weight
+    base_bias = old_layer.base_bias
     in_features = old_layer.in_features
     out_features = old_layer.out_features
     
-    # Import our custom LinearLayer from basecat.layers.
-    from basecat.layers import LinearLayer
+    from basecat.layers import LinearLayer  # Import our custom linear layer.
     new_layer = LinearLayer(in_features, out_features)
     
-    # Set new parameters to scaled versions of the old parameters.
     with torch.no_grad():
-        new_layer.weight.copy_(old_layer.weight / scale)
-        new_layer.bias.copy_(old_layer.bias / scale)
+        # Set new layer's parameters based on the base parameters scaled by 1/scale.
+        new_layer.weight.copy_(base_weight / scale)
+        new_layer.bias.copy_(base_bias / scale)
     
-    # Override the forward pass: multiply the result by scale.
+    # Store base parameters in the new layer for future modifications.
+    new_layer.base_weight = base_weight
+    new_layer.base_bias = base_bias
+    
+    # Capture the original forward function of new_layer.
     original_forward = new_layer.forward
+    
+    # Override the forward pass so that the layer output compensates for the scaling.
     def new_forward(x):
         return scale * original_forward(x)
+    
     new_layer.forward = new_forward
     
-    # Define the reparameterization map.
+    # Define the reparameterization map: r(p_new) = scale * p_new.
     def reparam_map(new_param):
         return scale * new_param
     
@@ -56,29 +70,22 @@ def self_modify_fc1(model: MNISTClassifier, scale: float = 2.0) -> (MNISTClassif
     """
     Self-modify the MNISTClassifier by reparameterizing its fc1 layer.
     
-    This function:
-      - Creates a deep copy of the original model.
-      - Replaces the fc1 layer with a new version whose parameters are scaled by 1/scale,
-        with an adjusted forward pass that compensates by multiplying by scale.
-      - Returns the new model along with a reparameterization function r for fc1 parameters.
+    This function creates a deep copy of the model, then replaces its fc1 layer with a new version
+    obtained via reparameterize_fc1. The new fc1 uses the original (base) parameters for computation,
+    ensuring that repeated modifications are idempotent.
     
     Args:
-        model (MNISTClassifier): The original MNIST classifier model.
-        scale (float): The scaling factor for reparameterization.
-        
+        model (MNISTClassifier): The original MNIST classifier.
+        scale (float): The scaling factor for this modification.
+    
     Returns:
-        new_model (MNISTClassifier): The modified model with the new fc1.
+        new_model (MNISTClassifier): The modified model with updated fc1.
         r (callable): The reparameterization function for fc1 parameters.
     """
-    # Deep copy the original model so that we do not modify it.
     new_model = copy.deepcopy(model)
-    
-    # Retrieve the original fc1 layer.
     old_fc1 = model.fc1
-    # Reparameterize fc1: create a new fc1 and get the reparameterization map.
     new_fc1, r = reparameterize_fc1(old_fc1, scale)
     new_model.fc1 = new_fc1
-    
     return new_model, r
 
 def test_self_modification():
@@ -89,35 +96,28 @@ def test_self_modification():
       - Instantiates an original MNISTClassifier.
       - Computes its output on a dummy input.
       - Applies self-modification to fc1.
-      - Computes the output of the modified model.
-      - Verifies that the outputs are equal (within a numerical tolerance).
+      - Verifies that the modified model produces the same output as the original.
     """
     from project_mnist import MNISTClassifier
     
-    # Instantiate the original model.
     original_model = MNISTClassifier()
     original_model.eval()
     
-    # Create a dummy input: shape (batch, channels, height, width) = (1, 1, 28, 28)
     x = torch.randn(1, 1, 28, 28)
-    
     with torch.no_grad():
-        original_output = original_model(x)
+        orig_output = original_model(x)
     
-    # Apply self-modification to fc1.
     modified_model, r = self_modify_fc1(original_model, scale=2.0)
     modified_model.eval()
-    
     with torch.no_grad():
-        modified_output = modified_model(x)
+        mod_output = modified_model(x)
     
-    # Compare the outputs.
-    if torch.allclose(original_output, modified_output, atol=1e-6):
+    if torch.allclose(orig_output, mod_output, atol=1e-6):
         print("Self-modification preserved model output!")
     else:
         print("Self-modification FAILED: outputs differ.")
-        print("Original output:", original_output)
-        print("Modified output:", modified_output)
+        print("Original output:", orig_output)
+        print("Modified output:", mod_output)
 
 if __name__ == "__main__":
     test_self_modification()
